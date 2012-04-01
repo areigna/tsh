@@ -187,46 +187,36 @@ void eval(char *cmdline)
 		//wait for the child process to terminate
 		if(!bg){
 			int stat;
-			pid_t ppp;
+			struct job_t* kjob;
 			addjob(jobs,pid,FG,cmdline);//add the job as foreground
-			if ((ppp=waitpid(pid, &stat, WUNTRACED))<0)
+			if (waitpid(pid, &stat, WUNTRACED)<0)
 				unix_error("waitpid error");
-			//pause();
-			if ((getjobpid(jobs,ppp)->state)==FG)
-				deletejob(jobs,ppp);
-		}
+			
+			kjob = getjobpid(jobs,pid);
+			if(kjob->state == 100)//it is stopped by a signal call
+				kjob->state = FG;//set it back to FG
+			else if(kjob->state ==200)//send from SIGINT handler
+				kjob->state = ST;//set it back to ST
+			else if(*(kjob->cmdline) == '/')//if the pathnames are used
+				;
+			//in this case, the job stops or terminates by calling signal by itself 
+			else{
+				if(WIFSTOPPED(stat)){//call SIGSTP by itself
+					printf("Job [%d] (%d) stopped by signal %d\n",kjob->jid,kjob->pid,SIGTSTP);
+					kjob->state = ST;
+				}
+				else if(WIFSIGNALED(stat))//call SIGINT by itself
+					printf("Job [%d] (%d) terminated by signal %d\n",kjob->jid,kjob->pid,SIGTSTP);
+			}
+			//delete the removed job
+			if ((getjobpid(jobs,pid)->state)==FG)
+				deletejob(jobs,pid);
+			}
 		else{	
 			addjob(jobs,pid,BG,cmdline);//add the job as background
 			printf("[%d] (%d) %s",nextjid-1,pid,cmdline);
-		}
+			}
 	} // end of if !builtin_cmd
-    return;
-}
-void sigchld_handler(int sig) 
-{
-	int stat;
-	pid_t pid=0;
-	struct job_t* kjob;
-	if ((pid=fgpid(jobs))){
-		kjob=getjobpid(jobs,pid);
-		if(kjob->state == ST)
-			printf("Jobaa [%d] (%d) stopped by signal %d%s\n",kjob->jid,kjob->pid,SIGTSTP,kjob->cmdline);
-		else if(kjob->state == FG){
-			if((pid=waitpid(pid, &stat, WUNTRACED))<0){
-				unix_error("waitpid error");
-			}
-			if(WIFEXITED(stat)){
-				printf("Jobaaaa [%d] (%d) terminated by signal %d%s\n",kjob->jid,kjob->pid,SIGINT,kjob->cmdline);
-				deletejob(jobs,pid);
-			}
-			else if(WIFSTOPPED(stat)){
-				kjob->state = ST;
-				printf("Jobaaa [%d] (%d) stopped by signal %d%s\n",kjob->jid,kjob->pid,SIGTSTP,kjob->cmdline);
-			}
-		}
-	}
-		kill(getpid(),SIGCONT);
-	
     return;
 }
 
@@ -295,11 +285,11 @@ int builtin_cmd(char **argv)
 {
 	if(!strcmp(argv[0], "quit")) // if "quit", then exit.
 		exit(0);
-	if(!strcmp(argv[0], "jobs")){
+	if(!strcmp(argv[0], "jobs")){//if jobs, call listjob
 		listjobs(jobs);
 		return 1;
 	}
-	if(!strcmp(argv[0], "bg")||!strcmp(argv[0],"fg")){
+	if(!strcmp(argv[0], "bg")||!strcmp(argv[0],"fg")){//if fg or bg
 		do_bgfg(argv);
 		return 1;
 	}
@@ -356,19 +346,41 @@ void do_bgfg(char **argv)
 		}
 		jidS = jobS->jid;
 	}
-
+	//if the command is bg
 	if(!strcmp(argv[0],"bg")){
+		//continue it
 		kill(pidS,SIGCONT);
+		//change the state to BG
 		jobS -> state = BG;
 		printf("[%d] (%d) %s",jidS,pidS,jobS->cmdline);
 	}
 	else if(!strcmp(argv[0],"fg")){
+		//if the state is in STOP state.continue it
 		if(jobS->state==ST){
 			kill(pidS,SIGCONT);
 		}
 		jobS->state = FG;//set state to foreground job
+
+		//suspend the shell
 		if (waitpid(pidS, &stat, WUNTRACED)<0)
 			unix_error("waitpid error");
+		
+		if(jobS->state == 100)//terminated by a signal
+			jobS->state = FG;//set the state back to FG 
+		else if(jobS->state ==200)//stopped by a signal
+			jobS->state = ST;//set the state back to ST
+		else if(*(jobS->cmdline) == '/')//avoid print the result of /bin/.. command
+			;
+		//in this case, the job stops or terminates by calling signal by itself 
+		else{
+			if(WIFSTOPPED(stat)){//call SIGSTP by itself
+				printf("Job [%d] (%d) stopped by signal %d\n",jobS->jid,jobS->pid,SIGTSTP);
+				jobS->state = ST;//set state to stop
+			}
+			else if(WIFSIGNALED(stat))//call SIGINT by itself
+				printf("Job [%d] (%d) terminated by signal %d\n",jobS->jid,jobS->pid,SIGTSTP);
+		}
+		//delete the removed jobs
 		if ((getjobpid(jobs,pidS)->state)==FG)
 			deletejob(jobs,pidS);
 	}
@@ -394,6 +406,19 @@ void waitfg(pid_t pid)
  *     available zombie children, but doesn't wait for any other
  *     currently running children to terminate.  
  */
+void sigchld_handler(int sig) 
+{
+	//pid_t pid=0;
+	//struct job_t* kjob;
+	//if ((pid=fgpid(jobs))){
+		//kjob=getjobpid(jobs,pid);
+			//printf("Jobaa [%d] (%d) stopped by signal %d%s\n",kjob->jid,kjob->pid,SIGTSTP,kjob->cmdline);
+		//else if(kjob->state==FG))
+			//printf("Jobaa [%d] (%d) stopped by signal %d%s\n",kjob->jid,kjob->pid,SIGTSTP,kjob->cmdline);
+	//}
+	
+    return;
+}
 
 /* 
  * sigint_handler - The kernel sends a SIGINT to the shell whenver the
@@ -406,9 +431,10 @@ void sigint_handler(int sig)
 	if ((pid=fgpid(jobs))){
 		struct job_t* kjob;
 		kjob=getjobpid(jobs,pid);
-		kill(pid,SIGINT);
+		kjob->state = 100;//use 100 to indicate that it is terminated by signal
+		printf("Job [%d] (%d) terminated by signal %d\n",kjob->jid,kjob->pid,SIGINT);
+		kill(pid,SIGINT);//forward if to the child process
 
-		//printf("Job [%d] (%d) terminated by signal %d\n",kjob->jid,kjob->pid,SIGINT);
 	}
     return;
 }
@@ -424,9 +450,9 @@ void sigtstp_handler(int sig)
 	if ((pid=fgpid(jobs))){
 		struct job_t* kjob;
 		kjob=getjobpid(jobs,pid);
-		kjob->state = ST;
-		kill(pid,SIGTSTP);
-		//printf("Job [%d] (%d) stopped by signal %d\n",kjob->jid,kjob->pid,SIGTSTP);
+		kjob->state = 200;//200 indicate that it is stopped by signal
+		printf("Job [%d] (%d) stopped by signal %d\n",kjob->jid,kjob->pid,SIGTSTP);
+		kill(pid,SIGTSTP);//forward if to the child process
 	}
     return;
 }
