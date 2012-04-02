@@ -1,7 +1,10 @@
 /* 
  * tsh - A tiny shell program with job control
  * 
- * <Put your name and login ID here>
+ * name: Hao Chen
+ * id#: 27434628
+ * netId: hchen42
+ * email: hchen42@u.rochester.edu
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -197,8 +200,8 @@ void eval(char *cmdline)
 				kjob->state = FG;//set it back to FG
 			else if(kjob->state ==200)//send from SIGINT handler
 				kjob->state = ST;//set it back to ST
-			else if(*(kjob->cmdline) == '/')//if the pathnames are used
-				;
+			//else if(*(kjob->cmdline) == '/')//if the pathnames are used
+				//;
 			//in this case, the job stops or terminates by calling signal by itself 
 			else{
 				if(WIFSTOPPED(stat)){//call SIGSTP by itself
@@ -349,7 +352,7 @@ void do_bgfg(char **argv)
 	//if the command is bg
 	if(!strcmp(argv[0],"bg")){
 		//continue it
-		kill(pidS,SIGCONT);
+		kill(0-pidS,SIGCONT);
 		//change the state to BG
 		jobS -> state = BG;
 		printf("[%d] (%d) %s",jidS,pidS,jobS->cmdline);
@@ -357,7 +360,7 @@ void do_bgfg(char **argv)
 	else if(!strcmp(argv[0],"fg")){
 		//if the state is in STOP state.continue it
 		if(jobS->state==ST){
-			kill(pidS,SIGCONT);
+			kill(0-pidS,SIGCONT);
 		}
 		jobS->state = FG;//set state to foreground job
 
@@ -369,8 +372,8 @@ void do_bgfg(char **argv)
 			jobS->state = FG;//set the state back to FG 
 		else if(jobS->state ==200)//stopped by a signal
 			jobS->state = ST;//set the state back to ST
-		else if(*(jobS->cmdline) == '/')//avoid print the result of /bin/.. command
-			;
+		//else if(*(jobS->cmdline) == '/')//avoid print the result of /bin/.. command
+			//;
 		//in this case, the job stops or terminates by calling signal by itself 
 		else{
 			if(WIFSTOPPED(stat)){//call SIGSTP by itself
@@ -433,7 +436,7 @@ void sigint_handler(int sig)
 		kjob=getjobpid(jobs,pid);
 		kjob->state = 100;//use 100 to indicate that it is terminated by signal
 		printf("Job [%d] (%d) terminated by signal %d\n",kjob->jid,kjob->pid,SIGINT);
-		kill(pid,SIGINT);//forward if to the child process
+		kill(0-pid,SIGINT);//forward if to the child process
 
 	}
     return;
@@ -452,7 +455,7 @@ void sigtstp_handler(int sig)
 		kjob=getjobpid(jobs,pid);
 		kjob->state = 200;//200 indicate that it is stopped by signal
 		printf("Job [%d] (%d) stopped by signal %d\n",kjob->jid,kjob->pid,SIGTSTP);
-		kill(pid,SIGTSTP);//forward if to the child process
+		kill(0-pid,SIGTSTP);//forward if to the child process
 	}
     return;
 }
